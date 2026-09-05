@@ -11,8 +11,7 @@ Roblox Universal Full-Body VR - Updated for 2026
 
 To install sauceVR for your script executor, save the `package.lua` file located in this repository to your `scripts/` folder.
 
-
-You can also use the loadstring:
+You can also use the loadstring (works with most modern executors):
 
 ```lua
 loadstring(
@@ -20,7 +19,17 @@ game:HttpGetAsync("https://raw.githubusercontent.com/saucekid/sauceVR/main/packa
 )()
 ```
 
-**Note:** This version has been updated for 2026 with improved compatibility for modern Roblox clients and executors. Some features may require specific executor capabilities.
+**Alternative loadstring methods** (if the above doesn't work with your executor):
+```lua
+-- Method 2: Using raw URL directly
+loadstring(game:HttpGet("https://raw.githubusercontent.com/saucekid/sauceVR/main/package.lua"))()
+
+-- Method 3: For executors without loadstring
+local func = loadstring or string.loadstring or load
+func(game:HttpGetAsync("https://raw.githubusercontent.com/saucekid/sauceVR/main/package.lua"))()
+```
+
+**Note:** This version has been updated for 2026 with improved compatibility for modern Roblox clients and executors. The script now safely detects executor capabilities and provides fallbacks for missing functions.
 
 ## Options
 

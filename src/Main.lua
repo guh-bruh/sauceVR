@@ -1,3 +1,7 @@
+-- SauceVR 2026 - Main Module
+-- Original by saucekid (December 4, 2022)
+-- Fixed for modern Roblox (2026)
+
 local sauceVR = script:FindFirstAncestor("sauceVR")
 
 local Players = game:GetService("Players")  
@@ -13,7 +17,7 @@ local CurrentCamera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 
 local Library = require(sauceVR.Components.UI.VRLibrary)
-local Keyboard = require( sauceVR.Components.UI.Keyboard)
+local Keyboard = require(sauceVR.Components.UI.Keyboard)
 
 local Event = require(sauceVR.Util.Event)
 local Utils = require(sauceVR.Util.Utils)
@@ -22,19 +26,45 @@ local VRReady = UserInputService.VREnabled or (VRService and VRService.VREnabled
 local diedFunc
 local propMenu
 
--- Safe environment function getter
+-- Safe environment function getter for modern executors
 local function getEnvFunction(name)
-    local env = getfenv and getfenv() or _G
-    return env[name] or (getgenv and getgenv()[name]) or nil
+    if not name then return nil end
+    local lowerName = name:lower()
+    
+    -- Try getgenv first
+    if getgenv then
+        local result = getgenv()[name] or getgenv()[lowerName]
+        if result then return result end
+    end
+    
+    -- Try _G
+    if _G[name] or _G[lowerName] then
+        return _G[name] or _G[lowerName]
+    end
+    
+    -- Try getfenv
+    if getfenv then
+        local fenv = getfenv()
+        local result = fenv[name] or fenv[lowerName]
+        if result then return result end
+    end
+    
+    return nil
 end
 
--- Get executor-specific functions safely
+-- Get executor-specific functions safely with multiple name variants
 local setHiddenProperty = getEnvFunction("sethiddenproperty") or getEnvFunction("set_hidden_property") or getEnvFunction("sethiddenprop")
-local setSimulationRadius = getEnvFunction("setsimulationradius") or getEnvFunction("set_simulation_radius") or getEnvFunction("setsimradius")
+local setSimulationRadius = getEnvFunction("setsimulationradius") or getEnvFunction("set_simulation_radius") or getEnvFunction("setsimradius") or getEnvFunction("set_sim_radius")
 local checkCaller = getEnvFunction("checkcaller") or function() return false end
 local newCClosure = getEnvFunction("newcclosure") or function(f) return f end
+local hookfunction = getEnvFunction("hookfunction") or getEnvFunction("hook_function")
+local hookmetamethod = getEnvFunction("hookmetamethod") or getEnvFunction("hook_metamethod")
+local getconnections = getEnvFunction("getconnections") or getEnvFunction("get_connections")
+local firesignal = getEnvFunction("firesignal") or getEnvFunction("fire_signal")
 
-getgenv().options = {
+-- Initialize options in global environment safely
+local env = getgenv and getgenv() or _G
+env.options = {
     HeadMovement = true,
     Inventory = "Bodyslots" ,
     DefaultMovementMethod = "SmoothLocomotion",
@@ -61,24 +91,32 @@ end, false, Enum.ContextActionPriority.High.Value, Enum.KeyCode.ButtonR1, Enum.K
 StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.Backpack, false)
 
 --Disable the native VR controller models.
-StarterGui:SetCore("VREnableControllerModels", false)
-DefaultCursorService:SetCursorState("Detect")
+pcall(function()
+    StarterGui:SetCore("VREnableControllerModels", false)
+end)
+pcall(function()
+    DefaultCursorService:SetCursorState("Detect")
+end)
 
 --Enable bubble chat if disabled.
-game.Chat.BubbleChatEnabled = true
+pcall(function()
+    game.Chat.BubbleChatEnabled = true
+end)
 
 --.Chatted fix by Stefanuk12
 require(sauceVR.Util.FixChatted)
 
 --Bypass any bodymover checks (executor-dependent, may not work on all executors).
 if getconnections and hookfunction and newCClosure then
-    for i, connection in pairs(getconnections(game.ChildAdded)) do
-       connection:Disable()
-    end
+    pcall(function()
+        for i, connection in pairs(getconnections(game.ChildAdded)) do
+           connection:Disable()
+        end
 
-    for i, connection in pairs(getconnections(game.ItemChanged)) do
-        connection:Disable()
-    end
+        for i, connection in pairs(getconnections(game.ItemChanged)) do
+            connection:Disable()
+        end
+    end)
 
     local Blacklisted = {
         "BodyForce",
@@ -93,24 +131,28 @@ if getconnections and hookfunction and newCClosure then
     }
 
     local OrgFunc
-    OrgFunc = hookfunction(game.IsA, newCClosure(function(Obj, Type)
-        if table.find(Blacklisted, Type) then
-            return false
-        else
-            return OrgFunc(Obj, Type)
-        end
-    end))
+    pcall(function()
+        OrgFunc = hookfunction(game.IsA, newCClosure(function(Obj, Type)
+            if table.find(Blacklisted, Type) then
+                return false
+            else
+                return OrgFunc(Obj, Type)
+            end
+        end))
+    end)
 
     local OldIndex
-    OldIndex = hookmetamethod(game, "__index", function(Self, i)
-        if not checkCaller() and i == "ClassName" then
-            if OrgFunc(Self, "BodyMover") then
-                return "Instance"
-            elseif tostring(i) == 'BodyVelocity' then
-                return 'BodyVelocity'
+    pcall(function()
+        OldIndex = hookmetamethod(game, "__index", function(Self, i)
+            if not checkCaller() and i == "ClassName" then
+                if OrgFunc and OrgFunc(Self, "BodyMover") then
+                    return "Instance"
+                elseif tostring(i) == 'BodyVelocity' then
+                    return 'BodyVelocity'
+                end
             end
-        end
-        return OldIndex(Self, i)
+            return OldIndex(Self, i)
+        end)
     end)
 end
 
