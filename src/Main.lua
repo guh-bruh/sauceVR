@@ -7,6 +7,7 @@ local HapticService = game:GetService("HapticService")
 local UserInputService = game:GetService("UserInputService")
 local ContextActionService = game:GetService("ContextActionService")
 local StarterGui = game:GetService("StarterGui")
+local VRService = game:GetService("VRService")
 
 local CurrentCamera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
@@ -17,9 +18,21 @@ local Keyboard = require( sauceVR.Components.UI.Keyboard)
 local Event = require(sauceVR.Util.Event)
 local Utils = require(sauceVR.Util.Utils)
 
-local VRReady = UserInputService.VREnabled
+local VRReady = UserInputService.VREnabled or (VRService and VRService.VREnabled) or false
 local diedFunc
 local propMenu
+
+-- Safe environment function getter
+local function getEnvFunction(name)
+    local env = getfenv and getfenv() or _G
+    return env[name] or (getgenv and getgenv()[name]) or nil
+end
+
+-- Get executor-specific functions safely
+local setHiddenProperty = getEnvFunction("sethiddenproperty") or getEnvFunction("set_hidden_property") or getEnvFunction("sethiddenprop")
+local setSimulationRadius = getEnvFunction("setsimulationradius") or getEnvFunction("set_simulation_radius") or getEnvFunction("setsimradius")
+local checkCaller = getEnvFunction("checkcaller") or function() return false end
+local newCClosure = getEnvFunction("newcclosure") or function(f) return f end
 
 getgenv().options = {
     HeadMovement = true,
@@ -57,47 +70,49 @@ game.Chat.BubbleChatEnabled = true
 --.Chatted fix by Stefanuk12
 require(sauceVR.Util.FixChatted)
 
---Bypass any bodymover checks.
-for i, connection in pairs(getconnections(game.ChildAdded)) do
-   connection:Disable()
-end
-
-for i, connection in pairs(getconnections(game.ItemChanged)) do
-    connection:Disable()
-end
-
-local Blacklisted = {
-    "BodyForce",
-    "BodyPosition",
-    "BodyVelocity",
-    "BodyThrust",
-    "BodyGyro",
-    "BodyAngularVelocity",
-    "RocketPropulsion",
-    "BodyMover",
-    "VectorForce"
-}
-
-local OrgFunc
-OrgFunc = hookfunction(game.IsA, newcclosure(function(Obj, Type)
-    if table.find(Blacklisted, Type) then
-        return false
-    else
-        return OrgFunc(Obj, Type)
+--Bypass any bodymover checks (executor-dependent, may not work on all executors).
+if getconnections and hookfunction and newCClosure then
+    for i, connection in pairs(getconnections(game.ChildAdded)) do
+       connection:Disable()
     end
-end))
 
-local OldIndex
-OldIndex = hookmetamethod(game, "__index", function(Self, i)
-    if not checkcaller() and i == "ClassName" then
-        if OrgFunc(Self, "BodyMover") then
-            return "Instance"
-        elseif tostring(i) == 'BodyVelocity' then
-            return 'BodyVelocity'
+    for i, connection in pairs(getconnections(game.ItemChanged)) do
+        connection:Disable()
+    end
+
+    local Blacklisted = {
+        "BodyForce",
+        "BodyPosition",
+        "BodyVelocity",
+        "BodyThrust",
+        "BodyGyro",
+        "BodyAngularVelocity",
+        "RocketPropulsion",
+        "BodyMover",
+        "VectorForce"
+    }
+
+    local OrgFunc
+    OrgFunc = hookfunction(game.IsA, newCClosure(function(Obj, Type)
+        if table.find(Blacklisted, Type) then
+            return false
+        else
+            return OrgFunc(Obj, Type)
         end
-    end
-    return OldIndex(Self, i)
-end)
+    end))
+
+    local OldIndex
+    OldIndex = hookmetamethod(game, "__index", function(Self, i)
+        if not checkCaller() and i == "ClassName" then
+            if OrgFunc(Self, "BodyMover") then
+                return "Instance"
+            elseif tostring(i) == 'BodyVelocity' then
+                return 'BodyVelocity'
+            end
+        end
+        return OldIndex(Self, i)
+    end)
+end
 
 
 --[[
@@ -172,14 +187,14 @@ function Init()
                 Utils:permaDeath(Character)
                 Humanoid.RootPart.Anchored = false
 
-                --Reweld hats in case unwelded
+                --Reweld hats in case unwelded (requires sethiddenproperty executor function)
                 --[[
                 task.delay(0.5, function()
                     for _,hat in pairs(Character:GetChildren()) do
-                        if hat:IsA("Accessory") then
+                        if hat:IsA("Accessory") and setHiddenProperty then
                             task.spawn(function()
                                 for i = 1,3 do
-                                    sethiddenproperty(hat, "BackendAccoutrementState", 3) 
+                                    setHiddenProperty(hat, "BackendAccoutrementState", 3) 
                                     for i,att in pairs(hat.Handle:GetChildren()) do
                                         if att:IsA("Attachment") then att:Destroy() end 
                                     end
