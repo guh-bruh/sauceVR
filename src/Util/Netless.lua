@@ -1,6 +1,7 @@
 --[[
     Netless bypass 
     edited from MW Reanimate
+    Updated for 2026 - Modern executor compatibility
 --]]
 
 local sauceVR = script:FindFirstAncestor("sauceVR")
@@ -33,20 +34,34 @@ local function getNetlessVelocity(realPartVelocity) --edit this if you have a be
     return realPartVelocity * v3_xz + v3_net
 end
 
-local shp = getfenv().sethiddenproperty
+-- Safe environment function getter for modern executors
+local function getEnvFunction(name)
+    local fenv = getfenv and getfenv() or _G
+    return fenv[name] or (getgenv and getgenv()[name]) or nil
+end
+
+local shp = getEnvFunction("sethiddenproperty") or getEnvFunction("set_hidden_property") or getEnvFunction("sethiddenprop")
+local ssr = getEnvFunction("setsimulationradius") or getEnvFunction("set_simulation_radius") or getEnvFunction("set_sim_radius") or getEnvFunction("setsimradius") or getEnvFunction("setsimrad") or getEnvFunction("set_sim_rad")
+
 if shp then
     local con = nil
     con = heartbeat:Connect(function()
         if not c then return con:Disconnect() end
-        shp(lp, "SimulationRadius", 1000)
+        pcall(function()
+            shp(lp, "SimulationRadius", 1000)
+        end)
+    end)
+elseif ssr then
+    -- Alternative simulation radius method
+    local con = nil
+    con = heartbeat:Connect(function()
+        if not c then return con:Disconnect() end
+        pcall(function()
+            ssr(1000)
+        end)
     end)
 end
 
-
-local fenv = getfenv()
-
-local shp = fenv.sethiddenproperty or fenv.set_hidden_property or fenv.set_hidden_prop or fenv.sethiddenprop
-local ssr = fenv.setsimulationradius or fenv.set_simulation_radius or fenv.set_sim_radius or fenv.setsimradius or fenv.setsimrad or fenv.set_sim_rad
 
 local reclaim, lostpart = c.PrimaryPart, nil
 
@@ -100,35 +115,47 @@ function netless:align(Part0, Part1, offset, nameHide)
     local rot = rad(0.05)
     local con0, con1 = nil, nil
     con0 = stepped:Connect(function()
-        if not (align.Part0 and align.Part1) then return con0:Disconnect() and con1:Disconnect() end
-        align.Part0.RotVelocity = align.Part1.RotVelocity
+        if not (align.Part0 and align.Part1) then 
+            if con0 then con0:Disconnect() end
+            if con1 then con1:Disconnect() end
+            return
+        end
+        pcall(function()
+            align.Part0.RotVelocity = align.Part1.RotVelocity
+        end)
     end)
 
     local lastpos, vel = align.Part0.Position, align.Part1.Velocity
     con1 = heartbeat:Connect(function(delta)
-        if not (align.Part0 and align.Part1 and att1) then return con0:Disconnect() and con1:Disconnect() end
-        if (not align.Part0.Anchored) then
-            if lostpart == align.Part0 then
-                lostpart = nil
-            end
-            att1[typeof(align.offset) == "CFrame" and "CFrame" or "Position"] = align.offset or v3_0
-            local newcf = align.Part1.CFrame * att1.CFrame
-            local vel = (newcf.Position - lastpos) / delta
-            align.Part0.Velocity = getNetlessVelocity(vel)
-            if vel.Magnitude < 1 then
-                rot = -rot
-                newcf *= angles(0, 0, rot)
-            end
-            lastpos = newcf.Position
-            if lostpart and (align.Part0 == reclaim) then
-                newcf = lostpart.CFrame
-            elseif hide then
-                newcf += v3_hide
-            end
-            align.Part0.CFrame = newcf
-        elseif (not align.Part0.Anchored) and (abs(align.Part0.Velocity.X) < 45) and (abs(align.Part0.Velocity.Y) < 25) and (abs(align.Part0.Velocity.Z) < 45) then
-            lostpart = align.Part0
+        if not (align.Part0 and align.Part1 and att1) then 
+            if con0 then con0:Disconnect() end
+            if con1 then con1:Disconnect() end
+            return
         end
+        pcall(function()
+            if (not align.Part0.Anchored) then
+                if lostpart == align.Part0 then
+                    lostpart = nil
+                end
+                att1[typeof(align.offset) == "CFrame" and "CFrame" or "Position"] = align.offset or v3_0
+                local newcf = align.Part1.CFrame * att1.CFrame
+                local vel = (newcf.Position - lastpos) / delta
+                align.Part0.Velocity = getNetlessVelocity(vel)
+                if vel.Magnitude < 1 then
+                    rot = -rot
+                    newcf *= angles(0, 0, rot)
+                end
+                lastpos = newcf.Position
+                if lostpart and (align.Part0 == reclaim) then
+                    newcf = lostpart.CFrame
+                elseif hide then
+                    newcf += v3_hide
+                end
+                align.Part0.CFrame = newcf
+            elseif (not align.Part0.Anchored) and (abs(align.Part0.Velocity.X) < 45) and (abs(align.Part0.Velocity.Y) < 25) and (abs(align.Part0.Velocity.Z) < 45) then
+                lostpart = align.Part0
+            end
+        end)
     end)
 
     att1:GetPropertyChangedSignal("Parent"):Connect(function()

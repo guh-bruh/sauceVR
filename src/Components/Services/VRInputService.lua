@@ -8,6 +8,11 @@ VRInputService.RecenterOffset = CFrame.new()
 VRInputService.VRService = VRService or game:GetService("VRService")
 VRInputService.UserInputService = UserInputService or game:GetService("UserInputService")
 
+-- Check if VR is actually available
+VRInputService.VRAvailable = VRInputService.VRService and pcall(function() 
+    return VRInputService.VRService:GetUserCFrame(Enum.UserCFrame.Head) 
+end)
+
 VRInputService.ThumbstickValues = {
     [Enum.KeyCode.Thumbstick1] = Vector3.new(),
     [Enum.KeyCode.Thumbstick2] = Vector3.new(),
@@ -24,39 +29,69 @@ VRInputService.InputsDown = {
     [Enum.KeyCode.Thumbstick1] = false,
     [Enum.KeyCode.Thumbstick2] = false,
 }
-VRInputService.UserInputService.InputBegan:Connect(function(Input)
-    if VRInputService.InputsDown[Input.KeyCode] ~= nil then
-        VRInputService.InputsDown[Input.KeyCode] = true
-    end
-end)
-VRInputService.UserInputService.InputEnded:Connect(function(Input)
-    if VRInputService.InputsDown[Input.KeyCode] then
-        VRInputService.InputsDown[Input.KeyCode] = false
-    end
-end)
-VRInputService.UserInputService.InputChanged:Connect(function(Input)
-    if VRInputService.ThumbstickValues[Input.KeyCode] then
-        VRInputService.ThumbstickValues[Input.KeyCode] = Input.Position
-    end
+
+-- Safe connection for input events
+pcall(function()
+    VRInputService.UserInputService.InputBegan:Connect(function(Input)
+        if VRInputService.InputsDown[Input.KeyCode] ~= nil then
+            VRInputService.InputsDown[Input.KeyCode] = true
+        end
+    end)
+    VRInputService.UserInputService.InputEnded:Connect(function(Input)
+        if VRInputService.InputsDown[Input.KeyCode] then
+            VRInputService.InputsDown[Input.KeyCode] = false
+        end
+    end)
+    VRInputService.UserInputService.InputChanged:Connect(function(Input)
+        if VRInputService.ThumbstickValues[Input.KeyCode] then
+            VRInputService.ThumbstickValues[Input.KeyCode] = Input.Position
+        end
+    end)
 end)
 
 
 
 function VRInputService:GetVRInputs()
-    --Get the head input.
-    local VRInputs = {
-        [Enum.UserCFrame.Head] = self.VRService:GetUserCFrame(Enum.UserCFrame.Head),
-    }
+    --Get the head input with error handling.
+    local VRInputs = {}
+    
+    pcall(function()
+        VRInputs[Enum.UserCFrame.Head] = self.VRService:GetUserCFrame(Enum.UserCFrame.Head)
+    end)
+    
+    -- Fallback if VR is not available or failed to get head CFrame
+    if not VRInputs[Enum.UserCFrame.Head] then
+        -- Use camera as fallback for non-VR mode
+        local camera = workspace.CurrentCamera
+        if camera then
+            VRInputs[Enum.UserCFrame.Head] = camera.CFrame
+        else
+            VRInputs[Enum.UserCFrame.Head] = CFrame.new(0, 5, 10)
+        end
+    end
 
-    --Get the hand inputs.
-    if self.VRService:GetUserCFrameEnabled(Enum.UserCFrame.LeftHand) then
-        VRInputs[Enum.UserCFrame.LeftHand] = self.VRService:GetUserCFrame(Enum.UserCFrame.LeftHand)
-    else
+    --Get the hand inputs with error handling.
+    pcall(function()
+        if self.VRService:GetUserCFrameEnabled(Enum.UserCFrame.LeftHand) then
+            VRInputs[Enum.UserCFrame.LeftHand] = self.VRService:GetUserCFrame(Enum.UserCFrame.LeftHand)
+        else
+            VRInputs[Enum.UserCFrame.LeftHand] = VRInputs[Enum.UserCFrame.Head] * CFrame.new(-1,-2.5,0.5)
+        end
+    end)
+    
+    if not VRInputs[Enum.UserCFrame.LeftHand] then
         VRInputs[Enum.UserCFrame.LeftHand] = VRInputs[Enum.UserCFrame.Head] * CFrame.new(-1,-2.5,0.5)
     end
-    if self.VRService:GetUserCFrameEnabled(Enum.UserCFrame.RightHand) then
-        VRInputs[Enum.UserCFrame.RightHand] = self.VRService:GetUserCFrame(Enum.UserCFrame.RightHand)
-    else
+    
+    pcall(function()
+        if self.VRService:GetUserCFrameEnabled(Enum.UserCFrame.RightHand) then
+            VRInputs[Enum.UserCFrame.RightHand] = self.VRService:GetUserCFrame(Enum.UserCFrame.RightHand)
+        else
+            VRInputs[Enum.UserCFrame.RightHand] = VRInputs[Enum.UserCFrame.Head] * CFrame.new(1,-2.5,0.5)
+        end
+    end)
+    
+    if not VRInputs[Enum.UserCFrame.RightHand] then
         VRInputs[Enum.UserCFrame.RightHand] = VRInputs[Enum.UserCFrame.Head] * CFrame.new(1,-2.5,0.5)
     end
 
@@ -86,15 +121,47 @@ function VRInputService:GetVRInputs()
 end
 
 function VRInputService:Recenter()
-    local HeadCFrame = self.VRService:GetUserCFrame(Enum.UserCFrame.Head)
+    local HeadCFrame
+    pcall(function()
+        HeadCFrame = self.VRService:GetUserCFrame(Enum.UserCFrame.Head)
+    end)
+    
+    if not HeadCFrame then
+        -- Fallback to camera if VR not available
+        local camera = workspace.CurrentCamera
+        if camera then
+            HeadCFrame = camera.CFrame
+        else
+            HeadCFrame = CFrame.new(0, 5, 10)
+        end
+    end
+    
     self.RecenterOffset = CFrame.Angles(0,-math.atan2(-HeadCFrame.LookVector.X,-HeadCFrame.LookVector.Z),0) * CFrame.new(-HeadCFrame.X,0,-HeadCFrame.Z)
-    sauceVREvent:Fire("Recenter")
+    if sauceVREvent then
+        sauceVREvent:Fire("Recenter")
+    end
 end
 
 
 function VRInputService:SetEyeLevel()
-    self.ManualNormalHeadLevel = self.VRService:GetUserCFrame(Enum.UserCFrame.Head).Y
-    sauceVREvent:Fire("EyeLevel")
+    local headY
+    pcall(function()
+        headY = self.VRService:GetUserCFrame(Enum.UserCFrame.Head).Y
+    end)
+    
+    if not headY then
+        local camera = workspace.CurrentCamera
+        if camera then
+            headY = camera.CFrame.Y
+        else
+            headY = 5
+        end
+    end
+    
+    self.ManualNormalHeadLevel = headY
+    if sauceVREvent then
+        sauceVREvent:Fire("EyeLevel")
+    end
 end
 
 
